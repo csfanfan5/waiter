@@ -1,5 +1,4 @@
 import numpy as np
-import math
 
 class Restaurant:
     def __init__(self, w, h, tables, v, p, wall_penalty=1000, table_reward=5000, time_penalty=1, time_penalty_type="linear"):
@@ -32,6 +31,10 @@ class Restaurant:
         # randomly place agent in restaurant to begin
         self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
 
+    def reset(self):
+        self.times = len(self.tables) * [-1]
+        self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
+
     def step(self, alpha):
         """
         Move foward by one timestep
@@ -47,8 +50,8 @@ class Restaurant:
         reward = 0.0
 
         # move agent
-        self.agent[0] += self.v * math.cos(alpha)
-        self.agent[1] += self.v * math.sin(alpha)
+        self.agent[0] += self.v * np.cos(alpha)
+        self.agent[1] += self.v * np.sin(alpha)
         
         # if hits the wall, respawn and incur penalty
         if not (0 <= self.agent[0] <= self.w and 0 <= self.agent[1] <= self.h):
@@ -69,7 +72,7 @@ class Restaurant:
                 elif self.time_penalty_type == "linear":  
                     reward -= self.time_penalty * self.times[i]
                 elif self.time_penalty_type == "exp":  
-                    reward -= self.time_penalty * math.exp(self.times[i]) 
+                    reward -= self.time_penalty * np.exp(self.times[i]) 
                 else:
                     raise Exception("Not valid type.")
 
@@ -78,6 +81,7 @@ class Restaurant:
                     self.times[i] = -1 
         
         return self.agent, self.times, reward
+
 
         
 
