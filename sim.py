@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from matplotlib.patches import Rectangle, Circle, FancyArrowPatch, Wedge
 from matplotlib.animation import FuncAnimation
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
@@ -137,5 +138,11 @@ def update(frame):
 
     return [agent_image, ax.title] + arrow_patches + semicircles
 
-ani = FuncAnimation(fig, update, frames=50, interval=10, blit=False)
+ani = FuncAnimation(fig, update, frames=100000, interval=10, blit=False)
+
+# Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
+writervideo = animation.FFMpegWriter(fps=50)
+ani.save('sim_demo.mp4', writer=writervideo)
+
 plt.show()
+plt.close() 
