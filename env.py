@@ -34,6 +34,7 @@ class Restaurant:
     def reset(self):
         self.times = len(self.tables) * [-1]
         self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
+        return (self.times, self.agent)
 
     def step(self, alpha):
         """
@@ -53,9 +54,10 @@ class Restaurant:
         self.agent[0] += self.v * np.cos(alpha)
         self.agent[1] += self.v * np.sin(alpha)
         
-        # if hits the wall, respawn and incur penalty
+        # if hits the wall, clamp the agent at the wall and incur penalty
         if not (0 <= self.agent[0] <= self.w and 0 <= self.agent[1] <= self.h):
-            self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
+            self.agent[0] = min(max(self.agent[0], 0), self.w)
+            self.agent[1] = min(max(self.agent[1], 0), self.h)
             reward -= self.wall_penalty
         
         for i in range(len(self.tables)):
@@ -80,7 +82,7 @@ class Restaurant:
                     reward += self.table_reward
                     self.times[i] = -1 
         
-        return self.agent, self.times, reward
+        return self.times, self.agent, reward
 
 
         
