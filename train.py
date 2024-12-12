@@ -198,14 +198,18 @@ class PPO:
                     torch.tensor([i + 1], dtype=torch.float32)
                 ], dim=0)
 
-                advantage = reward + value_predictor(next_state)
+                advantage = reward + value_predictor(next_state) - value_predictor(current_state)
 
                 eps = 1e-8  # A small constant to prevent division by zero
+                eps_clip = 1e-6
                 ratio = (new_probs[action] + eps) / (old_probs[action] + eps)
+
+                surr1 = ratio * advantage
+                surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantage
 
                 entropy_term = lamb * torch.log(new_probs[action] + eps)
 
-                tot_loss -= (ratio * advantage - entropy_term)
+                tot_loss -= (torch.min(surr1, surr2) + entropy_term)
         return tot_loss / (self.Pbatchsize * self.H)
 
 
@@ -253,4 +257,7 @@ class PPO:
             objectives.append(avg_objective_val)
         # for the purpose of graphing
         return objectives
+    
+    def save_nns(self):
+        torch.save(self.policy.state_dict(), "model_weights.pth")
 
