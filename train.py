@@ -11,11 +11,11 @@ class ValueNetwork(nn.Module):
     def __init__(self, state_dim):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 128),  # Concatenate s and h
+            nn.Linear(state_dim + 1, 32),  # Concatenate s and h
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Linear(128, 1)  # Output scalar value
+            nn.Linear(32, 1)  # Output scalar value
         )
 
     def forward(self, states):
@@ -28,7 +28,7 @@ class ValueNetwork(nn.Module):
         """
         return self.net(states).squeeze(-1)
 
-    def value_loss(self, value_net, states, returns):
+    def value_loss(self, states, returns):
         """
         Compute the mean squared error between predicted values and observed returns.
         
@@ -40,7 +40,7 @@ class ValueNetwork(nn.Module):
         Returns:
         - loss: Scalar MSE loss.
         """
-        predicted_values = value_net(states)  # Shape: [B]
+        predicted_values = self.net(states)  # Shape: [B]
         return nn.MSELoss()(predicted_values, returns)
 
 
@@ -50,11 +50,11 @@ class DiscretePolicy(nn.Module):
     def __init__(self, state_dim: int, action_dim: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 128),
+            nn.Linear(state_dim + 1, 32),
             nn.ReLU(inplace=True),
-            nn.Linear(128, 128),
+            nn.Linear(32, 32),
             nn.ReLU(inplace=True),
-            nn.Linear(128, action_dim),
+            nn.Linear(32, action_dim),
         )
 
     def forward(self, states):
@@ -78,8 +78,8 @@ class PPO:
         self.env = res
         self.H = horizon
 
-        self.Vepochs = 5
-        self.Vbatches = 5
+        self.Vepochs = 100
+        self.Vbatches = 100
         self.Vbatchsize = 5
 
         self.Pbatches = 10
@@ -89,14 +89,14 @@ class PPO:
 
     def sample_from_logits(self, logits):
         probs = torch.softmax(logits, dim=-1)
-        if torch.any(torch.isnan(probs)) or torch.any(torch.isinf(probs)):
+        """ if torch.any(torch.isnan(probs)) or torch.any(torch.isinf(probs)):
             print("Logits:", logits)
             print("Probs:", probs)
             raise ValueError("Logits resulted in invalid probabilities (NaN or Inf).")
         if torch.any(probs < 0):
             print("Logits:", logits)
             print("Probs:", probs)
-            raise ValueError("Probs contain negative values.")
+            raise ValueError("Probs contain negative values.") """
         # sample using multinomial distribution
         action = torch.multinomial(probs, num_samples=1)
         
@@ -207,9 +207,11 @@ class PPO:
                 surr1 = ratio * advantage
                 surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantage
 
-                entropy_term = lamb * torch.log(new_probs[action] + eps)
-
-                tot_loss -= (torch.min(surr1, surr2) + entropy_term)
+                #entropy_term = lamb * torch.log(new_probs[action] + eps)
+                entropy = -torch.sum(new_probs * torch.log(new_probs + eps))
+                #tot_loss -= (torch.min(surr1, surr2) + entropy_term)
+                loss = -torch.min(surr1, surr2) + lamb * entropy
+                tot_loss += loss
         return tot_loss / (self.Pbatchsize * self.H)
 
 
@@ -226,7 +228,8 @@ class PPO:
         for _ in range(self.Vepochs):
             state_batches, value_batches = self.create_state_value_batches(self.Vbatches, self.Vbatchsize)
             for i in range(self.Vbatches):
-                loss = value_net.value_loss(value_net, state_batches[i], value_batches[i])
+                loss = value_net.value_loss(state_batches[i], value_batches[i])
+                print("Valuefunc loss: ", loss.item())
                 # Update the value network
                 value_optimizer.zero_grad()
                 loss.backward()
@@ -239,7 +242,7 @@ class PPO:
         for _ in range(self.Pbatches):
             # compute loss
             loss = self.compute_loss(self.policy, duplicate_policy, value_net)
-            print(loss)
+            print("PPO loss: ", loss.item())
             objective_sum -= loss
             self.optimizer.zero_grad()
             loss.backward()

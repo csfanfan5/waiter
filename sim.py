@@ -111,7 +111,7 @@ tot_reward = 0
 ppo = PPO(restaurant, 1000)
 
 ppo.learn()
-
+ppo.save_nns()
 states, _, rewards = ppo.create_trajectory(ppo.policy)
 
 # Update function for animation
