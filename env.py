@@ -52,18 +52,16 @@ class Restaurant:
         # move agent
         self.agent[0] += self.v * np.cos(alpha)
         self.agent[1] += self.v * np.sin(alpha)
-        
-        # if hits the wall, respawn and incur penalty
-        if not (0 <= self.agent[0] <= self.w and 0 <= self.agent[1] <= self.h):
-            self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
-            reward -= self.wall_penalty
+
+        self.agent[0] = np.clip(self.agent[0], 0, self.w)
+        self.agent[1] = np.clip(self.agent[1], 0, self.h)
         
         for i in range(len(self.tables)):
             # if table is currently empty, regenerate with probability p
             if self.times[i] == -1 and not (self.tables[i][0] <= self.agent[0] <= self.tables[i][1] and self.tables[i][2] <= self.agent[1] <= self.tables[i][3]):
                 if np.random.binomial(1, self.p):
                     self.times[i] = 0
-            # if table is filled
+
             else:
                 self.times[i] += 1 # time increment
                 

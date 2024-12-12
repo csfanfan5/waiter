@@ -141,8 +141,8 @@ def update(frame):
 ani = FuncAnimation(fig, update, frames=100000, interval=10, blit=False)
 
 # Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
-writervideo = animation.FFMpegWriter(fps=50)
-ani.save('sim_demo.mp4', writer=writervideo)
+# writervideo = animation.FFMpegWriter(fps=50)
+# ani.save('sim_demo.mp4', writer=writervideo)
 
 plt.show()
-plt.close() 
+# plt.close() 
