@@ -6,6 +6,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.colors as mcolors
 from env import Restaurant
 import numpy as np
+from train import PPO
 
 # Room and tables setup
 room_width = 13  # Width
@@ -27,6 +28,8 @@ image = plt.imread(image_path)
 
 # Person's movement (x, y) positions over time
 restaurant = Restaurant(room_width, room_height, tables, v=0.1, p=0.03)
+
+ppo_learner = PPO(restaurant, 100000)
 
 max_color_val = 300
 
@@ -104,11 +107,23 @@ agent_image = ax.imshow(
     zorder=3,
 )
 tot_reward = 0
+
+ppo = PPO(restaurant, 1000)
+
+ppo.learn()
+
+states, _, rewards = ppo.create_trajectory(ppo.policy)
+
 # Update function for animation
 def update(frame):
     # Update the position of the circle
     global tot_reward, agent_image
-    agent, times, reward = restaurant.step(0) # the input into the step is the angle of movement
+    state = states[frame].tolist()
+    times_start_index = len(restaurant.tables) * 4 + 2
+    times = state[times_start_index : times_start_index + len(restaurant.tables)]
+    agent = state[times_start_index + len(restaurant.tables): times_start_index + len(restaurant.tables) + 2]
+    reward = rewards[frame]
+    #times, agent, reward = restaurant.step(0) # the input into the step is the angle of movement
     tot_reward += reward
 
     # set pos of agent
@@ -138,11 +153,12 @@ def update(frame):
 
     return [agent_image, ax.title] + arrow_patches + semicircles
 
-ani = FuncAnimation(fig, update, frames=100000, interval=10, blit=False)
+ani = FuncAnimation(fig, update, frames=1000, interval=10, blit=False)
 
 # Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
-# writervideo = animation.FFMpegWriter(fps=50)
-# ani.save('sim_demo.mp4', writer=writervideo)
+""" writervideo = animation.FFMpegWriter(fps=50)
+ani.save('sim_demo.mp4', writer=writervideo) """
+>>>>>>> 1de993813115ea2d49174c3f01617582d20d9200
 
 plt.show()
 # plt.close() 

@@ -1,7 +1,7 @@
 import numpy as np
 
 class Restaurant:
-    def __init__(self, w, h, tables, v, p, wall_penalty=1000, table_reward=5000, time_penalty=1, time_penalty_type="linear"):
+    def __init__(self, w, h, tables, v, p, wall_penalty=100, table_reward=2000, time_penalty=5, time_penalty_type="linear"):
         """
         Initialize the Restaurant
 
@@ -34,6 +34,7 @@ class Restaurant:
     def reset(self):
         self.times = len(self.tables) * [-1]
         self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
+        return (self.times, self.agent)
 
     def step(self, alpha):
         """
@@ -52,9 +53,13 @@ class Restaurant:
         # move agent
         self.agent[0] += self.v * np.cos(alpha)
         self.agent[1] += self.v * np.sin(alpha)
-
-        self.agent[0] = np.clip(self.agent[0], 0, self.w)
-        self.agent[1] = np.clip(self.agent[1], 0, self.h)
+        
+        # if hits the wall, clamp the agent at the wall and incur penalty
+        if not (0 <= self.agent[0] <= self.w and 0 <= self.agent[1] <= self.h):
+            self.agent[0] = min(max(self.agent[0], 0), self.w)
+            self.agent[1] = min(max(self.agent[1], 0), self.h)
+            reward -= self.wall_penalty
+>>>>>>> 1de993813115ea2d49174c3f01617582d20d9200
         
         for i in range(len(self.tables)):
             # if table is currently empty, regenerate with probability p
@@ -78,7 +83,7 @@ class Restaurant:
                     reward += self.table_reward
                     self.times[i] = -1 
         
-        return self.agent, self.times, reward
+        return self.times, self.agent, reward
 
 
         
