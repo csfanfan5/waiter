@@ -78,12 +78,12 @@ class PPO:
         self.env = res
         self.H = horizon
 
-        self.Vepochs = 100
-        self.Vbatches = 100
-        self.Vbatchsize = 5
+        self.Vepochs = 15
+        self.Vbatches = 15
+        self.Vbatchsize = 10
 
-        self.Pbatches = 10
-        self.Pbatchsize = 10
+        self.Pbatches = 1
+        self.Pbatchsize = 1
 
         self.learning_steps = 20
 
@@ -223,7 +223,7 @@ class PPO:
         # we should have something called advantage in the end
         # create value_net which is V(s,h) baseline prediction for current policy
         value_net = ValueNetwork(self.state_dim)
-        value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
+        value_optimizer = optim.Adam(value_net.parameters(), lr=9e-4)
 
         for _ in range(self.Vepochs):
             state_batches, value_batches = self.create_state_value_batches(self.Vbatches, self.Vbatchsize)

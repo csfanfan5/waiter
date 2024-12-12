@@ -27,9 +27,9 @@ image_path = "the_waiter.png"  # Replace with your PNG file path
 image = plt.imread(image_path)
 
 # Person's movement (x, y) positions over time
-restaurant = Restaurant(room_width, room_height, tables, v=0.1, p=0.03)
+restaurant = Restaurant(room_width, room_height, tables, v=1, p=0.03)
 
-ppo_learner = PPO(restaurant, 100000)
+ppo_learner = PPO(restaurant, 100)
 
 max_color_val = 300
 
@@ -153,7 +153,7 @@ def update(frame):
 
     return [agent_image, ax.title] + arrow_patches + semicircles
 
-ani = FuncAnimation(fig, update, frames=1000, interval=10, blit=False)
+ani = FuncAnimation(fig, update, frames=100, interval=10, blit=False)
 
 # Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
 """ writervideo = animation.FFMpegWriter(fps=50)
