@@ -11,11 +11,11 @@ class ValueNetwork(nn.Module):
     def __init__(self, state_dim):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 64),  # Concatenate s and h
+            nn.Linear(state_dim + 1, 128),  # Concatenate s and h
             nn.ReLU(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(64, 1)  # Output scalar value
+            nn.Linear(128, 1)  # Output scalar value
         )
 
     def forward(self, states):
@@ -50,11 +50,11 @@ class DiscretePolicy(nn.Module):
     def __init__(self, state_dim: int, action_dim: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 64),
+            nn.Linear(state_dim + 1, 128),
             nn.ReLU(inplace=True),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.ReLU(inplace=True),
-            nn.Linear(64, action_dim),
+            nn.Linear(128, action_dim),
         )
 
     def forward(self, states):
@@ -68,7 +68,7 @@ class PPO:
 
         # state dim: 5 parameters per table (4 sides + time), position (x,y) of agent, width and height
         self.state_dim = len(res.tables) * 5 + 4
-        self.action_dim = 36 # 0, 10, ... 350 degrees
+        self.action_dim = 8
 
         # group static state variables for efficiency
         self.static_env_tensor = torch.tensor([coord for table in res.tables for coord in table] + [res.w, res.h], dtype=torch.float32)
@@ -82,10 +82,10 @@ class PPO:
         self.Vbatches = 5
         self.Vbatchsize = 5
 
-        self.Pbatches = 5
-        self.Pbatchsize = 5
+        self.Pbatches = 10
+        self.Pbatchsize = 10
 
-        self.learning_steps = 1
+        self.learning_steps = 20
 
     def sample_from_logits(self, logits):
         probs = torch.softmax(logits, dim=-1)
@@ -125,7 +125,7 @@ class PPO:
             action = self.sample_from_logits(logits)
             
             # get angle alpha to travel in
-            alpha = np.radians(10 * action)
+            alpha = np.radians((360 / self.action_dim) * action)
 
             
             times, agent, reward = self.env.step(alpha)
@@ -187,7 +187,7 @@ class PPO:
                 action = self.sample_from_logits(old_logits)
 
                 # get angle alpha to travel in
-                alpha = np.radians(10 * action)
+                alpha = np.radians((360 / self.action_dim) * action)
 
                 times, agent, reward = self.env.step(alpha)
 

@@ -1,7 +1,7 @@
 import numpy as np
 
 class Restaurant:
-    def __init__(self, w, h, tables, v, p, wall_penalty=10, table_reward=500, time_penalty=5, time_penalty_type="linear"):
+    def __init__(self, w, h, tables, v, p, wall_penalty=100, table_reward=2000, time_penalty=5, time_penalty_type="linear"):
         """
         Initialize the Restaurant
 
