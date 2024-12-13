@@ -29,8 +29,6 @@ image = plt.imread(image_path)
 # Person's movement (x, y) positions over time
 restaurant = Restaurant(room_width, room_height, tables, v=1, p=0.03)
 
-ppo_learner = PPO(restaurant, 100)
-
 max_color_val = 300
 
 # Function to determine table color based on its waiting time
@@ -108,11 +106,13 @@ agent_image = ax.imshow(
 )
 tot_reward = 0
 
-ppo = PPO(restaurant, 1000)
+# ppo = PPO(restaurant, 1000)
 
-ppo.learn()
-ppo.save_nns()
-states, _, rewards = ppo.create_trajectory(ppo.policy)
+# ppo.train()
+# ppo.save_nns()
+ppo = PPO(restaurant, 10000)
+ppo.load_nns()
+states, _, rewards, _, _, _ = ppo.collect_trajectories(1)
 
 # Update function for animation
 def update(frame):

@@ -21,19 +21,19 @@ res = Restaurant(room_width, room_height, tables, v=0.1, p=0.03)
 
 ppo = PPO(res, 1000)
 
-objectives = ppo.learn()
+objectives = ppo.train()
 
-objective_vals = [obj.item() for obj in objectives]
+# objective_vals = [obj.item() for obj in objectives]
 
-plt.plot(objective_vals, marker='o', label='Objectives')
+# plt.plot(objective_vals, marker='o', label='Objectives')
 
-# Add labels and a title
-plt.xlabel('Index')
-plt.ylabel('Objective Value')
-plt.title('Objective Values Over Time')
+# # Add labels and a title
+# plt.xlabel('Index')
+# plt.ylabel('Objective Value')
+# plt.title('Objective Values Over Time')
 
 # Add a legend
-plt.legend()
+# plt.legend()
 
 # Show the plot
-plt.show()
+# plt.show()
