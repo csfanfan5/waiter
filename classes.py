@@ -13,7 +13,7 @@ class ValueNetwork(nn.Module):
     def __init__(self, state_dim):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 32),  # Concatenate s and h
+            nn.Linear(state_dim, 32),  # Concatenate s and h
             nn.ReLU(),
             nn.Linear(32, 32),
             nn.ReLU(),
@@ -63,7 +63,7 @@ class DiscretePolicy(nn.Module):
     def __init__(self, state_dim: int, action_dim: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 128),
+            nn.Linear(state_dim, 128),
             nn.ReLU(inplace=True),
             nn.Linear(128, 128),
             nn.ReLU(inplace=True),
@@ -94,19 +94,25 @@ class PPO:
         self.advantage = advantage
 
         # state dim: 5 parameters per table (4 sides + time), position (x,y) of agent, width and height
-        self.state_dim = len(res.tables) * 5 + 4
+        # self.state_dim = len(res.tables) * 5 + 4
+        self.state_dim = len(res.tables) + 2
         self.action_dim = 4
+
+
+        self.lr = lr
 
         # group static state variables for efficiency
         self.static_env_tensor = torch.tensor([coord for table in res.tables for coord in table] + [res.w, res.h], dtype=torch.float32)
        
         self.policy = DiscretePolicy(self.state_dim, self.action_dim)
-        self.optimizer = optim.Adam(self.policy.parameters(), lr)
+        self.value_net = ValueNetwork(self.state_dim)
+        self.optimizer = optim.Adam(self.policy.parameters(), lr=self.lr)
+        self.value_optimizer = optim.Adam(self.value_net.parameters(), lr=self.lr)
         self.env = res
 
         self.Vepochs = 5
-        self.Vbatches = 2
-        self.Vbatchsize = 2
+        self.Vbatches = 5
+        self.Vbatchsize = 5
 
 
         self.Pbatches = pbatches
@@ -114,23 +120,60 @@ class PPO:
         self.learning_steps = learning_steps
 
         self.lamb = lamb 
-        self.lr = lr
 
     def sample_from_logits(self, logits):
         probs = torch.softmax(logits, dim=-1)
-        if torch.any(torch.isnan(probs)) or torch.any(torch.isinf(probs)):
-            print("Logits:", logits)
-            print("Probs:", probs)
-            raise ValueError("Logits resulted in invalid probabilities (NaN or Inf).")
-        if torch.any(probs < 0):
-            print("Logits:", logits)
-            print("Probs:", probs)
-            raise ValueError("Probs contain negative values.")
-        # sample using multinomial distribution
         action = torch.multinomial(probs, num_samples=1)
-        
         return action.item()
     
+    
+    def collect_batch(self, batch_size):
+        """
+        Collect a batch of transitions (states, actions, rewards, old_log_probs) using the current policy.
+        """
+        batch_states = []
+        batch_actions = []
+        batch_rewards = []
+        batch_log_probs = []
+
+        for _ in range(batch_size):
+            times, agent = self.env.reset()
+            done = False 
+            time = 0
+            while not done:
+                # Construct current state
+                state = torch.cat([
+                    # self.static_env_tensor,
+                    torch.tensor(times, dtype=torch.float32),
+                    torch.tensor(agent, dtype=torch.float32),
+                    # torch.tensor([time], dtype=torch.float32)
+                ], dim=0)
+                
+                logits = self.policy.forward(state)
+                probs = torch.softmax(logits, dim=-1)
+                action_dist = torch.distributions.Categorical(probs)
+                action = action_dist.sample()
+
+                log_prob = action_dist.log_prob(action)
+                alpha = np.radians((360 / self.action_dim) * action.item())
+
+                next_times, next_agent, reward, done = self.env.step(alpha)
+
+                # Store transition
+                batch_states.append(state)
+                batch_actions.append(action.item())
+                batch_rewards.append(reward)
+                batch_log_probs.append(log_prob.detach())
+
+                times = next_times
+                agent = next_agent
+                time += 1
+
+        return (torch.stack(batch_states), 
+                torch.tensor(batch_actions), 
+                torch.tensor(batch_rewards, dtype=torch.float32), 
+                torch.stack(batch_log_probs))
+
     def create_trajectory(self, policy: DiscretePolicy):
         """
         Rolls out one trajectory according to policy
@@ -146,10 +189,10 @@ class PPO:
         time = 0 
         while not done: 
             state = torch.cat([
-                self.static_env_tensor,  # Assumes this is already a tensor
+                # self.static_env_tensor,  # Assumes this is already a tensor
                 torch.tensor(times, dtype=torch.float32),  # Convert list to tensor
                 torch.tensor(agent, dtype=torch.float32),   # Convert list to tensor
-                torch.tensor([time], dtype=torch.float32)
+                # torch.tensor([time], dtype=torch.float32)
             ], dim=0)
             
             logits = policy.forward(state)
@@ -158,7 +201,6 @@ class PPO:
             # get angle alpha to travel in
             alpha = np.radians((360 / self.action_dim) * action)
 
-            
             times, agent, reward, done = self.env.step(alpha)
 
             states.append(state)
@@ -197,7 +239,39 @@ class PPO:
         
         return state_batches, value_batches
 
-    def compute_loss(self, new_policy, old_policy, value_predictor=None):
+
+    def compute_loss(self, new_policy, old_policy, value_predictor, states, actions, rewards, old_log_probs):
+        # Compute advantages if needed. For now, just treat reward as advantage placeholder.
+        # Proper advantage = reward + gamma*V(next_state) - V(current_state) should be computed,
+        # but we omit that for the sake of focusing on fixes #1 and #6.
+        advantages = rewards  # This is a simplification; in practice, compute true advantages.
+
+        logits = new_policy(states)
+        new_probs = torch.softmax(logits, dim=-1)
+
+        with torch.no_grad():
+            old_logits = old_policy(states)
+            old_probs = torch.softmax(old_logits, dim=-1)
+
+        # Compute ratios
+        eps = 1e-8
+        eps_clip = 0.2  # Typically around 0.1-0.2
+        action_indices = actions.view(-1,1)
+        # Gather probs for chosen actions
+        new_probs_act = new_probs.gather(1, action_indices)
+        old_probs_act = old_probs.gather(1, action_indices)
+
+        ratio = (new_probs_act + eps) / (old_probs_act + eps)
+
+        surr1 = ratio * advantages.unsqueeze(1)
+        surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantages.unsqueeze(1)
+
+        # Entropy (optional)
+        entropy = torch.distributions.Categorical(new_probs).entropy().mean()
+
+        loss = -torch.min(surr1, surr2).mean() + self.lamb * entropy
+        return loss
+    def compute_loss_old(self, new_policy, old_policy, value_predictor=None):
         # rolls out num_traj trajectories
         # now calculate PPO objective, note we flip the sign of the objective to do gradient descent on it
         tot_loss = 0
@@ -252,7 +326,47 @@ class PPO:
         return tot_loss / self.Pbatchsize
 
 
+
     def optim_step(self):
+        # First, collect a batch of data using the current policy (this will serve as old data)
+        # For instance, collect one batch of size self.Pbatchsize (number of trajectories)
+        states, actions, rewards, old_log_probs = self.collect_batch(batch_size=self.Pbatchsize)
+
+        # Compute returns or advantages here if needed
+        # For now, we just use returns directly, as previously defined.
+        # Proper advantage estimation is recommended but omitted here.
+        values = self.rewards_to_value(rewards)
+        values = torch.tensor(values, dtype=torch.float32)
+        values = values.unsqueeze(1)
+
+        # Create old_policy as a fixed snapshot of the current policy
+        old_policy = DiscretePolicy(self.state_dim, self.action_dim)
+        old_policy.load_state_dict(self.policy.state_dict())
+        old_policy.eval()  # ensure old_policy is not trained
+
+        # Create and train value network
+        value_optimizer = self.value_optimizer
+        value_net = self.value_net 
+
+        # Train value network on the collected data (simple approach)
+        # Here we do just one step for demonstration. In practice, do multiple epochs.
+
+        # Now optimize the policy multiple epochs on the same batch of data
+        objective_sum = 0
+        for _ in range(self.Pbatches):
+            # Compute PPO loss on the fixed batch
+            loss = self.compute_loss(self.policy, old_policy, value_net, states, actions, rewards, old_log_probs)
+            objective_sum -= loss
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+        return objective_sum / self.Pbatches
+
+
+
+    def optim_step_old(self):
         """
         Performs arg max. I.e. does multiple steps of gradient descent
         """
@@ -287,7 +401,6 @@ class PPO:
             self.optimizer.step()
 
         # for the purpose of graphing
-        print("Completed one step of optimization!\n")
         return objective_sum / self.Pbatches
 
     # def optim_step_no_advantage(self): 

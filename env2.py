@@ -117,6 +117,7 @@ class Restaurant:
             reward: reward accumulated in this time step
         """
         reward = 0.0
+        terminated = False
 
         # move agent
         self.agent[0] += self.v * np.cos(alpha)
@@ -126,18 +127,20 @@ class Restaurant:
         if not (0 <= self.agent[0] <= self.w and 0 <= self.agent[1] <= self.h):
             self.agent[0] = np.clip(self.agent[0], 0, self.w)
             self.agent[1] = np.clip(self.agent[1], 0, self.h)
+            # terminated=  True 
             reward -= self.wall_penalty
+            # reward += self.wall_penalty
         
         for i in range(len(self.tables)):
             # if the agent is on the table, serve it 
             if self.tables[i][0] <= self.agent[0] <= self.tables[i][1] and self.tables[i][2] <= self.agent[1] <= self.tables[i][3] and self.active[i]:
-                reward += self.table_reward *  self.times[i] ** 2
+                reward += self.table_reward 
                 self.times[i] = -1 
                 self.active[i] = False 
 
 
             # if table is currently empty, regenerate with probability p
-            if self.active[i] == False:
+            elif self.active[i] == False:
                 # if the waiter is late, mark it as missed 
                 # respawn the table with probability p
                 if np.random.binomial(1, self.p):
@@ -152,19 +155,20 @@ class Restaurant:
                 self.times[i] = -1
                 self.active[i] = False
 
-            # if the agent is active, update the timer on it 
+            # if the table is active, update the timer on it 
             elif self.active[i]: 
                 self.times[i] += 1 # time increment
+                # reward -= ((self.tables[i][0] + self.tables[i][1])/2 - self.agent[0]) ** 2  + ((self.tables[i][2] + self.tables[i][3])/2 - self.agent[1]) ** 2
                 
 
 
 
         # check if we terminate 
-        terminated = False
         if self.missed_tables >= self.table_threshold:
             terminated = True 
         else: 
             reward += self.time_reward 
+            # reward -= self.time_reward 
 
         
         return self.times, self.agent, reward, terminated 
