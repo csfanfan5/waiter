@@ -1,7 +1,7 @@
 import numpy as np
 
 class Restaurant:
-    def __init__(self, w, h, tables, v, p, wall_penalty=0.1, table_reward=1, time_penalty=0.00001, time_penalty_type="linear"):
+    def __init__(self, w, h, tables, v, p, wall_penalty=0.1, table_reward=25, time_penalty=0.0000, time_penalty_type="quadratic"):
         """
         Initialize the Restaurant
 
@@ -9,13 +9,13 @@ class Restaurant:
             w: x - width of restaurant
             h: y - height of restaurant
             tables: list of lists [x1, x2, y1, y2] with x2 > x1, y2 > y1
-                                holding borders of each table
+                    specifying the borders of each table
             v: speed of waiter, assumed constant
-            p: empty tables regenerate with some uniform probability to simulate expo process
+            p: empty tables regenerate with some uniform probability (not currently used)
             wall_penalty: penalty for hitting wall
             table_reward: reward for serving table
             time_penalty: prefactor of penalty on table timers
-            time_penalty_type: in ["const", "linear", "exp"], default "linear"
+            time_penalty_type: one of ["const", "linear", "exp", "quadratic"]
         """
         self.w = w
         self.h = h
@@ -28,29 +28,37 @@ class Restaurant:
         self.time_penalty = time_penalty
         self.time_penalty_type = time_penalty_type
 
-        # randomly place agent in restaurant to begin
+        # randomly place agent in the restaurant to begin
         self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
 
     def reset(self):
-        self.times = len(self.tables) * [-1]
+        self.times = len(self.tables) * [1]
         self.agent = [np.random.uniform(0, self.w), np.random.uniform(0, self.h)] 
         return (self.times, self.agent)
 
-    def step(self, alpha):
+    def step(self, action):
         """
-        Move foward by one timestep
+        Move forward by one timestep
 
-        Args: (action)
-            alpha: the angle at which the agent moves relative to positive x axis
+        Args:
+            action: integer index of the chosen table to move towards
 
         Returns:
+            self.times: updated list of wait times for each table
             self.agent: agent coordinates [x,y]
-            self.times: list of time waiting on each table
             reward: reward accumulated in this time step
         """
-        reward = 0.0
+        # Compute direction to chosen table
+        action = int(action)
+        table = self.tables[action]
+        center_x = (table[0] + table[1]) / 2.0
+        center_y = (table[2] + table[3]) / 2.0
+        dx = center_x - self.agent[0]
+        dy = center_y - self.agent[1]
+        alpha = np.arctan2(dy, dx)
 
-        # move agent
+        reward = 0.0
+        # move agent in the direction of chosen table
         self.agent[0] += self.v * np.cos(alpha)
         self.agent[1] += self.v * np.sin(alpha)
         
@@ -61,31 +69,26 @@ class Restaurant:
             reward -= self.wall_penalty
         
         for i in range(len(self.tables)):
-            # if table is currently empty, regenerate with probability p
-            if self.times[i] == -1 and not (self.tables[i][0] <= self.agent[0] <= self.tables[i][1] and self.tables[i][2] <= self.agent[1] <= self.tables[i][3]):
-                if np.random.binomial(1, self.p):
-                    self.times[i] = 0
-            # if table is filled
-            else:
-                self.times[i] += 1 # time increment
-                
+            # If table is filled, increment waiting time and apply penalties
+            if self.times[i] != -1:
+                self.times[i] += 1
+
                 if self.time_penalty_type == "const":    
                     reward -= self.time_penalty
                 elif self.time_penalty_type == "linear":  
                     reward -= self.time_penalty * self.times[i]
                 elif self.time_penalty_type == "exp":  
                     reward -= self.time_penalty * np.exp(self.times[i]) 
+                elif self.time_penalty_type == 'quadratic':
+                    reward -= self.time_penalty * (self.times[i] ** 1.5)
                 else:
-                    raise Exception("Not valid type.")
+                    raise Exception("Not valid time_penalty_type.")
 
-                if self.tables[i][0] <= self.agent[0] <= self.tables[i][1] and self.tables[i][2] <= self.agent[1] <= self.tables[i][3]:
+                # If agent is on the table, serve it and get reward
+                if (self.tables[i][0] <= self.agent[0] <= self.tables[i][1]) and \
+                   (self.tables[i][2] <= self.agent[1] <= self.tables[i][3]) and self.times[i] != -1:
+                    # Reward decreases the longer the table waits
                     reward += self.table_reward
-                    self.times[i] = -1 
+                    self.times[i] = -1
         
         return self.times, self.agent, reward
-
-
-        
-
-        
-        

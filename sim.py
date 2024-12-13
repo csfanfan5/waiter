@@ -1,11 +1,11 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.patches import Rectangle, Circle, FancyArrowPatch, Wedge
+from matplotlib.patches import Rectangle, FancyArrowPatch, Wedge
 from matplotlib.animation import FuncAnimation
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import matplotlib.colors as mcolors
-from env import Restaurant
 import numpy as np
+
+from env import Restaurant
 from train import PPO
 
 # Room and tables setup
@@ -13,7 +13,6 @@ room_width = 13  # Width
 room_height = 7  # Height
 
 # Adjusted 3x2 grid of tables (3x2 units each)
-# Each table: [x1, x2, y1, y2]
 tables = [
     [1, 4, 4, 6],   # Top-left
     [5, 8, 4, 6],   # Top-center
@@ -26,26 +25,21 @@ tables = [
 image_path = "the_waiter.png"  # Replace with your PNG file path
 image = plt.imread(image_path)
 
-# Person's movement (x, y) positions over time
-restaurant = Restaurant(room_width, room_height, tables, v=1, p=0.03)
-
+restaurant = Restaurant(room_width, room_height, tables, v=0.5, p=0.03)
 max_color_val = 300
 
-# Function to determine table color based on its waiting time
 def get_meter_color(value):
     if value == -1:
         return "white"  # Blank
     elif value == 0:
         return "lightgreen"
     elif value <= max_color_val:
-        # Gradient from green to red
         norm = mcolors.Normalize(vmin=0, vmax=max_color_val)
-        cmap = plt.cm.RdYlGn_r  # Access colormap directly
+        cmap = plt.cm.RdYlGn_r
         return cmap(norm(value))
     else:
-        return "black"  # Above 100
+        return "black"
 
-# Create the figure and axis
 fig, ax = plt.subplots(figsize=(8, 6))
 ax.set_xlim(0, room_width)
 ax.set_ylim(0, room_height)
@@ -54,29 +48,25 @@ ax.set_xticks([])
 ax.set_yticks([])
 ax.set_title("Reward: ")
 
-# Add room boundary
 ax.plot([0, room_width, room_width, 0, 0], [0, 0, room_height, room_height, 0], 'k-')
 
-# Add tables with associated colors
 table_patches = []
-arrow_patches = []
 semicircles = []
+arrow_patches = []
 arrow_data = []
 
 for table in tables:
     x1, x2, y1, y2 = table
-    rect = Rectangle((x1, y1), x2 - x1, y2 - y1, edgecolor='blue',facecolor='none', zorder=1)
+    rect = Rectangle((x1, y1), x2 - x1, y2 - y1, edgecolor='blue', facecolor='none', zorder=1)
     ax.add_patch(rect)
     table_patches.append(rect)
 
-    # Add a semicircular meter (Wedge) on each table
     center_x = (x1 + x2) / 2
-    center_y = (y1 + y2) / 2 
+    center_y = (y1 + y2) / 2
     wedge = Wedge(center=(center_x, center_y), r=0.5, theta1=0, theta2=180, facecolor='white', edgecolor='black', zorder=2)
     ax.add_patch(wedge)
     semicircles.append(wedge)
 
-    # Add a rotating arrow on top of the semicircle
     arrow = FancyArrowPatch(
         (center_x, center_y),
         (center_x + 0.8, center_y),
@@ -87,13 +77,12 @@ for table in tables:
     )
     ax.add_patch(arrow)
     arrow_patches.append(arrow)
-    arrow_data.append((center_x, center_y))  # Store center positions for updates``
+    arrow_data.append((center_x, center_y))
 
 image_height, image_width, _ = image.shape
 image_aspect = image_width / image_height
-image_size = 0.8  # adjust size of server image
+image_size = 0.8
 
-# Initial position
 agent_image = ax.imshow(
     image,
     extent=[
@@ -106,27 +95,33 @@ agent_image = ax.imshow(
 )
 tot_reward = 0
 
-# ppo = PPO(restaurant, 1000)
+ppo = PPO(restaurant, 200)
+ppo.train()
+ppo.save_nns()
 
-# ppo.train()
-# ppo.save_nns()
-ppo = PPO(restaurant, 10000)
+# Load the trained model and possibly extend training if needed
+ppo = PPO(restaurant, 500)
 ppo.load_nns()
-states, _, rewards, _, _, _ = ppo.collect_trajectories(1)
 
-# Update function for animation
+# Collect a single trajectory
+states, actions, rewards, log_probs, returns, advantages = ppo.collect_trajectories(num_trajectories=1)
+
 def update(frame):
-    # Update the position of the circle
     global tot_reward, agent_image
+
+    # Extract state information
     state = states[frame].tolist()
-    times_start_index = len(restaurant.tables) * 4 + 2
-    times = state[times_start_index : times_start_index + len(restaurant.tables)]
-    agent = state[times_start_index + len(restaurant.tables): times_start_index + len(restaurant.tables) + 2]
+    num_tables = len(restaurant.tables)
+
+    # Compute indexing based on PPO state structure
+    # state structure: [static_env (len(tables)*4+2), times (num_tables), agent_x, agent_y, t]
+    times_start_index = num_tables*4 + 2
+    times = state[times_start_index : times_start_index + num_tables]
+    agent = state[times_start_index + num_tables : times_start_index + num_tables + 2]
+
     reward = rewards[frame]
-    #times, agent, reward = restaurant.step(0) # the input into the step is the angle of movement
     tot_reward += reward
 
-    # set pos of agent
     ax.set_title(f"Reward: {tot_reward}")
     agent_image.set_extent([
         agent[0] - image_size / 2,
@@ -137,27 +132,21 @@ def update(frame):
 
     for wedge, (arrow, (cx, cy)), value in zip(semicircles, zip(arrow_patches, arrow_data), times):
         color = get_meter_color(value)
-        wedge.set_facecolor(color)  # Update the semicircle color
+        wedge.set_facecolor(color)
 
-        # Update arrow position
         arrow_len = 0.8
         if value < 1:
             theta = np.pi
         elif value <= max_color_val:
-            theta = np.pi * (1 - (value / max_color_val))  # Compute angle in radians
+            theta = np.pi * (1 - (value / max_color_val))
         else:
             theta = 0
-        dx = arrow_len * np.cos(theta)  # x-offset for arrow endpoint
-        dy = arrow_len * np.sin(theta)  # y-offset for arrow endpoint
-        arrow.set_positions((cx, cy), (cx + dx, cy + dy))  # Update arrow endpoint dynamically
+        dx = arrow_len * np.cos(theta)
+        dy = arrow_len * np.sin(theta)
+        arrow.set_positions((cx, cy), (cx + dx, cy + dy))
 
     return [agent_image, ax.title] + arrow_patches + semicircles
 
-ani = FuncAnimation(fig, update, frames=100, interval=10, blit=False)
-
-# Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
-""" writervideo = animation.FFMpegWriter(fps=50)
-ani.save('sim_demo.mp4', writer=writervideo) """
-
+ani = FuncAnimation(fig, update, frames=len(states), interval=10, blit=False)
 plt.show()
-plt.close() 
+plt.close()
