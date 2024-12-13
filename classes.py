@@ -1,33 +1,36 @@
 import numpy as np
+from typing import Any 
 from torch import Tensor
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 import torch.optim as optim
-from env import Restaurant
-
-import argparse 
+from env2 import Restaurant
 
 
 class ValueNetwork(nn.Module):
     """Evaluating the baseline function V(s,h)."""
     def __init__(self, state_dim):
         super().__init__()
-        # self.net = nn.Sequential(
-        #     nn.Linear(state_dim + 1, 128),  # Concatenate s and h
-        #     nn.ReLU(),
-        #     nn.Linear(128, 128),
-        #     nn.ReLU(),
-        #     nn.Linear(128, 1)  # Output scalar value
-        # )
-
-        # simplified 
         self.net = nn.Sequential(
-            nn.Linear(state_dim + 1, 16),  # Concatenate s and h
+            nn.Linear(state_dim + 1, 32),  # Concatenate s and h
             nn.ReLU(),
-            nn.Linear(16, 16),
+            nn.Linear(32, 32),
             nn.ReLU(),
-            nn.Linear(16, 1)  # Output scalar value
+            nn.Linear(32, 1)  # Output scalar value
         )
+        for layer in self.net[:-1]:
+            if isinstance(layer, nn.Linear):
+                nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
+                if layer.bias is not None:
+                    nn.init.zeros_(layer.bias)
+        
+        # Initialize the final layer to produce uniform outputs
+        final_layer=  self.net[-1]
+        if isinstance(final_layer, nn.Linear):
+            nn.init.zeros_(final_layer.weight)  # Set weights to zero
+            nn.init.zeros_(final_layer.bias)    # Set biases to zero
+
     def forward(self, states):
         """
         Arguments:
@@ -38,7 +41,7 @@ class ValueNetwork(nn.Module):
         """
         return self.net(states).squeeze(-1)
 
-    def value_loss(self, value_net, states, returns):
+    def value_loss(self, states, returns):
         """
         Compute the mean squared error between predicted values and observed returns.
         
@@ -50,7 +53,7 @@ class ValueNetwork(nn.Module):
         Returns:
         - loss: Scalar MSE loss.
         """
-        predicted_values = value_net(states)  # Shape: [B]
+        predicted_values = self.net(states)  # Shape: [B]
         return nn.MSELoss()(predicted_values, returns)
 
 
@@ -73,44 +76,45 @@ class DiscretePolicy(nn.Module):
                     nn.init.zeros_(layer.bias)
         
         # Initialize the final layer to produce uniform outputs
-        final_layer = self.net[-1]
-        nn.init.zeros_(final_layer.weight)  # Set weights to zero
-        nn.init.zeros_(final_layer.bias)    # Set biases to zero
+        final_layer=  self.net[-1]
+        if isinstance(final_layer, nn.Linear):
+            nn.init.zeros_(final_layer.weight)  # Set weights to zero
+            nn.init.zeros_(final_layer.bias)    # Set biases to zero
+
+
+
     def forward(self, states):
         """Returns the action distribution for each state in the batch."""
         logits = self.net(states)
         return logits.float()
 
 class PPO:
-    def __init__(self, res: Restaurant, horizon: int, advantage : bool):
+    def __init__(self, res: Restaurant, advantage : bool, 
+                 pbatches : int, pbatchsize : int, learning_steps : int, lr : float = 3e-4, lamb : float = 0.1):
         self.advantage = advantage
-        # Policy network setup
 
         # state dim: 5 parameters per table (4 sides + time), position (x,y) of agent, width and height
         self.state_dim = len(res.tables) * 5 + 4
-        self.action_dim = 8
+        self.action_dim = 4
 
         # group static state variables for efficiency
         self.static_env_tensor = torch.tensor([coord for table in res.tables for coord in table] + [res.w, res.h], dtype=torch.float32)
        
         self.policy = DiscretePolicy(self.state_dim, self.action_dim)
-        self.optimizer = optim.Adam(self.policy.parameters(), lr=3e-4)
+        self.optimizer = optim.Adam(self.policy.parameters(), lr)
         self.env = res
-        self.H = horizon
 
         self.Vepochs = 5
-        self.Vbatches = 5
-        self.Vbatchsize = 5
-
-        self.Vepochs = 100
-        self.Vbatches = 100
-        self.Vbatchsize = 5
+        self.Vbatches = 2
+        self.Vbatchsize = 2
 
 
-        self.Pbatches = 5
-        self.Pbatchsize = 5
+        self.Pbatches = pbatches
+        self.Pbatchsize = pbatchsize
+        self.learning_steps = learning_steps
 
-        self.learning_steps = 30
+        self.lamb = lamb 
+        self.lr = lr
 
     def sample_from_logits(self, logits):
         probs = torch.softmax(logits, dim=-1)
@@ -138,12 +142,14 @@ class PPO:
         # reward!
         rewards = []
         times, agent = self.env.reset()
-        for i in range(self.H):
+        done = False 
+        time = 0 
+        while not done: 
             state = torch.cat([
                 self.static_env_tensor,  # Assumes this is already a tensor
                 torch.tensor(times, dtype=torch.float32),  # Convert list to tensor
                 torch.tensor(agent, dtype=torch.float32),   # Convert list to tensor
-                torch.tensor([i], dtype=torch.float32)
+                torch.tensor([time], dtype=torch.float32)
             ], dim=0)
             
             logits = policy.forward(state)
@@ -153,11 +159,12 @@ class PPO:
             alpha = np.radians((360 / self.action_dim) * action)
 
             
-            times, agent, reward = self.env.step(alpha)
+            times, agent, reward, done = self.env.step(alpha)
 
             states.append(state)
             actions.append(action)
             rewards.append(reward)
+            time += 1
 
         return states, actions, rewards
         
@@ -190,18 +197,20 @@ class PPO:
         
         return state_batches, value_batches
 
-    def compute_loss(self, new_policy, old_policy, value_predictor=None, lamb=0.1, use_advantage=False):
+    def compute_loss(self, new_policy, old_policy, value_predictor=None):
         # rolls out num_traj trajectories
         # now calculate PPO objective, note we flip the sign of the objective to do gradient descent on it
         tot_loss = 0
         for _ in range(self.Pbatchsize):
             times, agent = self.env.reset()
-            for i in range(self.H):
+            time = 0 
+            done = False 
+            while not done: 
                 current_state = torch.cat([
                     self.static_env_tensor,  # Assumes this is already a tensor
                     torch.tensor(times, dtype=torch.float32),  # Convert list to tensor
                     torch.tensor(agent, dtype=torch.float32),   # Convert list to tensor
-                    torch.tensor([i], dtype=torch.float32)
+                    torch.tensor([time], dtype=torch.float32)
                 ], dim=0)
                 
                 old_logits = old_policy.forward(current_state)
@@ -214,16 +223,16 @@ class PPO:
                 # get angle alpha to travel in
                 alpha = np.radians((360 / self.action_dim) * action)
 
-                times, agent, reward = self.env.step(alpha)
+                times, agent, reward, done = self.env.step(alpha)
 
                 next_state = torch.cat([
                     self.static_env_tensor,  # Assumes this is already a tensor
                     torch.tensor(times, dtype=torch.float32),  # Convert list to tensor
                     torch.tensor(agent, dtype=torch.float32),   # Convert list to tensor
-                    torch.tensor([i + 1], dtype=torch.float32)
+                    torch.tensor([time + 1], dtype=torch.float32)
                 ], dim=0)
 
-                if use_advantage:
+                if self.advantage:
                     assert value_predictor is not None
                     advantage = reward + value_predictor(next_state) - value_predictor(current_state)
                 else: 
@@ -236,11 +245,10 @@ class PPO:
                 surr1 = ratio * advantage
                 surr2 = torch.clamp(ratio, 1 - eps_clip, 1 + eps_clip) * advantage
 
-                entropy_term = lamb * torch.log(new_probs[action] + eps)
+                entropy_term = -1 * self.lamb * torch.log(new_probs[action] + eps)
 
                 tot_loss -= (torch.min(surr1, surr2) + entropy_term)
 
-        # return tot_loss / (self.Pbatchsize * self.H)
         return tot_loss / self.Pbatchsize
 
 
@@ -252,25 +260,25 @@ class PPO:
         # we should have something called advantage in the end
         # create value_net which is V(s,h) baseline prediction for current policy
         value_net = ValueNetwork(self.state_dim)
-        value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
+        value_optimizer = optim.Adam(value_net.parameters(), lr=self.lr)
 
-        for _ in range(self.Vepochs):
-            state_batches, value_batches = self.create_state_value_batches(self.Vbatches, self.Vbatchsize)
-            for i in range(self.Vbatches):
-                loss = value_net.value_loss(value_net, state_batches[i], value_batches[i])
-                print(loss.item())
-                # Update the value network
-                value_optimizer.zero_grad()
-                loss.backward()
-                value_optimizer.step()
-        
+        # for _ in range(self.Vepochs):
+        #     for i in range(self.Vbatches):
+
         # initialize a duplicate that allows us to improve upon self.policy
         objective_sum = 0
         duplicate_policy = DiscretePolicy(self.state_dim, self.action_dim)
         duplicate_policy.load_state_dict(self.policy.state_dict())
-        for _ in range(self.Pbatches):
+        for i in range(self.Pbatches):
+            state_batches, value_batches = self.create_state_value_batches(self.Vbatches, self.Vbatchsize)
+            vloss = value_net.value_loss(state_batches[i], value_batches[i].unsqueeze(1))
+            # Update the value network
+            value_optimizer.zero_grad()
+            vloss.backward()
+            value_optimizer.step()
+
             # compute loss
-            loss = self.compute_loss(self.policy, duplicate_policy, value_net, use_advantage=True)
+            loss = self.compute_loss(self.policy, duplicate_policy, value_net)
             print(loss)
             objective_sum -= loss
             self.optimizer.zero_grad()
@@ -282,88 +290,39 @@ class PPO:
         print("Completed one step of optimization!\n")
         return objective_sum / self.Pbatches
 
-    def optim_step_no_advantage(self): 
-        """
-        Performs arg max. I.e. does multiple steps of gradient descent without reducing 
-        variance via an advantage function.
-        """
-        # initialize a duplicate that allows us to improve upon self.policy
-        objective_sum = 0
-        duplicate_policy = DiscretePolicy(self.state_dim, self.action_dim)
-        duplicate_policy.load_state_dict(self.policy.state_dict())
-        for _ in range(self.Pbatches):
-            # compute loss
-            loss = self.compute_loss(self.policy, duplicate_policy, use_advantage=False, lamb=5.0)
-            print(loss)
-            objective_sum += loss
-            self.optimizer.zero_grad()
-            loss.backward()
-
-            self.optimizer.step()
-
-        # for the purpose of graphing
-        return objective_sum / self.Pbatches
+    # def optim_step_no_advantage(self): 
+    #     """
+    #     Performs arg max. I.e. does multiple steps of gradient descent without reducing 
+    #     variance via an advantage function.
+    #     """
+    #     # initialize a duplicate that allows us to improve upon self.policy
+    #     objective_sum = 0
+    #     duplicate_policy = DiscretePolicy(self.state_dim, self.action_dim)
+    #     duplicate_policy.load_state_dict(self.policy.state_dict())
+    #     for _ in range(self.Pbatches):
+    #         # compute loss
+    #         loss = self.compute_loss(self.policy, duplicate_policy)
+    #         objective_sum += loss
+    #         self.optimizer.zero_grad()
+    #         loss.backward()
+    #
+    #         self.optimizer.step()
+    #
+    #     # for the purpose of graphing
+    #     return objective_sum / self.Pbatches
 
     
     def learn(self):
         objectives = []
-        for i in range(self.learning_steps):
+        for _ in tqdm(range(self.learning_steps)):
             if self.advantage:
                 avg_objective_val = self.optim_step()
             else:
                 avg_objective_val = self.optim_step_no_advantage()
-            objectives.append(avg_objective_val)
-            print(f"{i} step completed")
+                objectives.append(avg_objective_val)
+
         # for the purpose of graphing
         return objectives
     
-    def save_nns(self):
-        torch.save(self.policy.state_dict(), "model_weights.pth")
-
-
-def get_args():
-    """Parses command line arguments."""
-
-    parser = argparse.ArgumentParser(description="") 
-
-    parser.add_argument(
-            ) 
-
-    parser.add_argument(
-        "--plots_dir",
-        default="./plots",
-        help="directory to save plots to",
-    )
-
-    # behavioral cloning args
-    parser.add_argument(
-        "--bc_epochs", type=int, help="number of supervised learning epochs"
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        help="learning rate",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        help="batch size",
-    )
-    parser.add_argument(
-        "--num_dataset_samples",
-        type=int,
-        help="number of samples to start dataset off with",
-    )
-
-    # DAgger args
-    parser.add_argument(
-        "--num_rollout_steps",
-        type=int,
-        help="number of steps to roll out with the policy",
-    )
-    parser.add_argument(
-        "--dagger_epochs", type=int, help="number of steps to run dagger"
-    )
-
-    args = parser.parse_args()
-    return args
+    def save_nns(self, save_path : str):
+        torch.save(self.policy.state_dict(), save_path)

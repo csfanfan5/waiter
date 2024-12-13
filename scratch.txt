@@ -1,0 +1,18 @@
+learning steps is the number of times we update the policy 
+don't use the value function approach for now, focus on just the policy gradient 
+[ ] figure out how to actually sample from the policy 
+
+python train2.py --pbatches 1 --pbatchsize 1 --learning_steps 25 --lr 3e-4 --lamb 1 --save_path model_weights.pth
+python train2.py --pbatches 1 --pbatchsize 1 --learning_steps 6 --lr 3e-4 --lamb 1 --save_path model_weights.pth
+python train2.py --pbatches 5 --pbatchsize 5 --learning_steps 25 --lr 3e-4 --lamb 1 --save_path model_weights.pth
+python train2.py --pbatches 5 --pbatchsize 5 --learning_steps 5 --lr 3e-4 --lamb 1 --save_path model_weights.pth
+python sim2.py --weights model_weights.pth
+
+python train2.py --pbatches 1 --pbatchsize 1 --advantage --learning_steps 6 --lr 3e-4 --lamb 1.5 --save_path model_weights.pth
+advantage: False 
+pbatches: 1 
+pbatchsize: 1
+learning_steps: 50
+learning_rate: 3e-4
+lamb: 1 
+save_path: model_weights.pth

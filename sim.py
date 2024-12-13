@@ -23,13 +23,13 @@ tables = [
     [9, 12, 1, 3],  # Bottom-right
 ]
 
-image_path = "the_waiter.png"  # Replace with your PNG file path
+image_path = "./the_waiter.png"  # Replace with your PNG file path
 image = plt.imread(image_path)
 
 # Person's movement (x, y) positions over time
 restaurant = Restaurant(room_width, room_height, tables, v=0.1, p=0.03)
 
-ppo_learner = PPO(restaurant, 100000)
+ppo_learner = PPO(restaurant, 1000, advantage=False)
 
 max_color_val = 300
 
@@ -108,9 +108,10 @@ agent_image = ax.imshow(
 )
 tot_reward = 0
 
-ppo = PPO(restaurant, 1000)
+ppo = PPO(restaurant, 1000, advantage=False)
 
 ppo.learn()
+ppo.save_nns()
 
 states, _, rewards = ppo.create_trajectory(ppo.policy)
 
@@ -158,7 +159,6 @@ ani = FuncAnimation(fig, update, frames=1000, interval=10, blit=False)
 # Save the animation as a video --- COMMENT THIS OUT IF YOU DON'T WANT TO SAVE THE VIDEO
 """ writervideo = animation.FFMpegWriter(fps=50)
 ani.save('sim_demo.mp4', writer=writervideo) """
->>>>>>> 1de993813115ea2d49174c3f01617582d20d9200
 
 plt.show()
 # plt.close() 

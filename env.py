@@ -1,7 +1,7 @@
 import numpy as np
 
 class Restaurant:
-    def __init__(self, w, h, tables, v, p, wall_penalty=100, table_reward=2000, time_penalty=5, time_penalty_type="linear"):
+    def __init__(self, w, h, tables, v, p, wall_penalty=100, table_reward=0.2, time_penalty=0.00001, time_penalty_type="linear"):
         """
         Initialize the Restaurant
 
@@ -59,7 +59,6 @@ class Restaurant:
             self.agent[0] = min(max(self.agent[0], 0), self.w)
             self.agent[1] = min(max(self.agent[1], 0), self.h)
             reward -= self.wall_penalty
->>>>>>> 1de993813115ea2d49174c3f01617582d20d9200
         
         for i in range(len(self.tables)):
             # if table is currently empty, regenerate with probability p
