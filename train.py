@@ -55,12 +55,12 @@ class DiscretePolicy(nn.Module):
 
 
 class PPO:
-    def __init__(self, env, horizon=200, gamma=1, eps_clip=0.2, lamb=10, lr=3e-4, vf_lr=1e-3, 
+    def __init__(self, env, horizon=200, gamma=1, eps_clip=0.2, lamb=20, lr=3e-4, vf_lr=1e-3, 
                  update_epochs=25, mini_batch_size=32):
         self.env = env
         # State includes tables plus [width, height] plus [current_time_step], etc.
         # Modify as needed. Originally: len(res.tables)*5 + 5 for state_dim (adjust if necessary)
-        self.state_dim = len(env.tables)*5 + 5
+        self.state_dim = len(env.tables) * 5 + 5
         self.action_dim = len(env.tables)  # Number of tables = number of discrete actions
         self.gamma = gamma
         self.eps_clip = eps_clip

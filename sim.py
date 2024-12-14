@@ -7,10 +7,14 @@ import numpy as np
 
 from env import Restaurant
 from train import PPO
+from shortest_path import ShortestPath
+from table_gen import TableGenerator
+from longest_weight import LongestWaiting
+from imitation import BC
 
-# Room and tables setup
-room_width = 13  # Width
-room_height = 7  # Height
+# room and tables setup
+room_width = 13
+room_height = 7
 
 # Adjusted 3x2 grid of tables (3x2 units each)
 tables = [
@@ -22,12 +26,16 @@ tables = [
     [9, 12, 1, 3],  # Bottom-right
 ]
 
-image_path = "the_waiter.png"  # Replace with your PNG file path
+#tables = TableGenerator(room_width, room_height).generate_tables(20)
+
+image_path = "the_waiter.png"
 image = plt.imread(image_path)
 
-restaurant = Restaurant(room_width, room_height, tables, v=0.5, p=0.03)
+restaurant = Restaurant(room_width, room_height, tables, v=0.3, p=.005)
+
 max_color_val = 300
 
+# get meter color
 def get_meter_color(value):
     if value == -1:
         return "white"  # Blank
@@ -40,6 +48,7 @@ def get_meter_color(value):
     else:
         return "black"
 
+# set up graph for animation
 fig, ax = plt.subplots(figsize=(8, 6))
 ax.set_xlim(0, room_width)
 ax.set_ylim(0, room_height)
@@ -55,6 +64,9 @@ semicircles = []
 arrow_patches = []
 arrow_data = []
 
+timer_size = 0.25
+
+# add the tables with the meters
 for table in tables:
     x1, x2, y1, y2 = table
     rect = Rectangle((x1, y1), x2 - x1, y2 - y1, edgecolor='blue', facecolor='none', zorder=1)
@@ -63,13 +75,13 @@ for table in tables:
 
     center_x = (x1 + x2) / 2
     center_y = (y1 + y2) / 2
-    wedge = Wedge(center=(center_x, center_y), r=0.5, theta1=0, theta2=180, facecolor='white', edgecolor='black', zorder=2)
+    wedge = Wedge(center=(center_x, center_y), r=timer_size, theta1=0, theta2=180, facecolor='white', edgecolor='black', zorder=2)
     ax.add_patch(wedge)
     semicircles.append(wedge)
 
     arrow = FancyArrowPatch(
         (center_x, center_y),
-        (center_x + 0.8, center_y),
+        (center_x + timer_size, center_y),
         color='black',
         arrowstyle='->',
         mutation_scale=10,
@@ -83,6 +95,7 @@ image_height, image_width, _ = image.shape
 image_aspect = image_width / image_height
 image_size = 0.8
 
+# add the agent
 agent_image = ax.imshow(
     image,
     extent=[
@@ -95,25 +108,45 @@ agent_image = ax.imshow(
 )
 tot_reward = 0
 
-ppo = PPO(restaurant, 200)
-ppo.train()
-ppo.save_nns()
+flag = 'PPO'
+#flag = 'Shortest'
+#flag = 'Waiting'
 
-# Load the trained model and possibly extend training if needed
-ppo = PPO(restaurant, 500)
-ppo.load_nns()
+if flag == 'PPO':
+    ppo = PPO(restaurant, 200)
+    ppo.train()
+    ppo.save_nns()
 
-# Collect a single trajectory
-states, actions, rewards, log_probs, returns, advantages = ppo.collect_trajectories(num_trajectories=1)
+    # load the trained model and possibly extend training if needed
+    ppo = PPO(restaurant, 500)
+    ppo.load_nns()
+
+    # collect a single trajectory
+    states, actions, rewards, log_probs, returns, advantages = ppo.collect_trajectories(num_trajectories=1)
+
+elif flag == 'Shortest':
+    sp = ShortestPath(restaurant)
+    states, actions, rewards = sp.create_trajectory(num_steps=10000)
+
+elif flag == 'Waiting':
+    lw = LongestWaiting(restaurant)
+    states, actions, rewards = lw.create_trajectory(num_steps=3000)
+
+elif flag == 'Imitation Learning':
+    im = BC(restaurant, ShortestPath)
+    states, actions, rewards = im.create_trajectory(num_steps = 3000)
+
+
+
 
 def update(frame):
     global tot_reward, agent_image
 
-    # Extract state information
+    # extract state information
     state = states[frame].tolist()
     num_tables = len(restaurant.tables)
 
-    # Compute indexing based on PPO state structure
+    # compute indexing based on PPO state structure
     # state structure: [static_env (len(tables)*4+2), times (num_tables), agent_x, agent_y, t]
     times_start_index = num_tables*4 + 2
     times = state[times_start_index : times_start_index + num_tables]
