@@ -1,11 +1,21 @@
-env.py: defines the environment via Restaurant() class
-Contains function step()
+# Restaurant Project
 
-sim.py: can create a test environment and animate output
+Welcome to our **Restaurant Project**! This repository demonstrates our efforts in using Proximal Policy Optimization (PPO) to optimize a waiter’s actions in a simulated restaurant environment.
 
+## Demo
+Check out a demo of our waiter animation: **[`sim_demo.mp4`](sim_demo.mp4)**.
 
-To set up the micromamba environment (with all 
-necessary packages), run 
-1. micromamba create -f environment.yaml
-2. micromamba activate 184-project
+## Files Overview
+- **`train.py`**: Contains all the training elements for the PPO algorithm.
+- **`env.py`**: Defines the custom environment, including the reward functions and environment dynamics.
+- **`sim.py`**: Trains the PPO model and renders an animation.
 
+## Setup Instructions
+To set up the project environment with all the required dependencies:
+
+1. Create the environment:
+   ```bash
+   micromamba create -f environment.yaml
+2. Activate the environment:
+   ```bash
+   micromamba activate 184-project
