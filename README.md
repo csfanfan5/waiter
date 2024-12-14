@@ -1,11 +1,3 @@
-env.py: defines the environment via Restaurant() class
-Contains function step()
+# Imitation Learning
 
-sim.py: can create a test environment and animate output
-
-
-To set up the micromamba environment (with all 
-necessary packages), run 
-1. micromamba create -f environment.yaml
-2. micromamba activate 184-project
-
+This is the imitation learning branch of our **Restaurant Project**.
