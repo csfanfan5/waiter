@@ -1,6 +1,6 @@
 # Restaurant Project
 
-Welcome to our **Restaurant Project**! This repository demonstrates our efforts in using Proximal Policy Optimization (PPO) to optimize a waiter’s actions in a simulated restaurant environment.
+Welcome to our **Restaurant Project**!
 
 ## Demo
 Check out a demo of our waiter animation: **[`sim_demo.mp4`](sim_demo.mp4)**.
